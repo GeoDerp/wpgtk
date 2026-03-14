@@ -1,0 +1,217 @@
+# Security Workflow for Dependency Vulnerability Scanning
+# This workflow runs multiple security checks on Python dependencies:
+# 1. pip-audit: Official PyPA tool for scanning Python packages against OSV database
+# 2. safety: Checks against Safety DB for known security vulnerabilities
+# 3. bandit: Security linter for Python code (optional, checks for security issues in code)
+#
+# Tools are run in isolated environments using pipx to ensure they only scan
+# the project's actual dependencies, not the scanning tools' own dependencies.
+
+name: Security - Dependency Vulnerability Scan
+
+on:
+  # Run on every push to main branches
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  # Run on every pull request
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+  # Allow manual trigger
+  workflow_dispatch:
+  # Run weekly on Monday at 9 AM UTC
+  schedule:
+    - cron: '0 9 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-scan:
+    name: Scan Dependencies for Vulnerabilities
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: 'pip'
+
+      - name: Install package dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Install pipx for isolated tool execution
+        run: |
+          python -m pip install pipx
+          python -m pipx ensurepath
+
+      - name: Install security scanning tools (isolated)
+        run: |
+          pipx install pip-audit
+          pipx install safety
+          pipx install bandit
+
+      - name: Run pip-audit (PyPA Official Tool)
+        id: pip-audit
+        continue-on-error: true
+        run: |
+          echo "## pip-audit Results" >> $GITHUB_STEP_SUMMARY
+          pipx run pip-audit --desc --format json > pip-audit-report.json || true
+          pipx run pip-audit --desc || true
+          if [ -f pip-audit-report.json ]; then
+            echo "pip-audit scan completed. Check the output above for details." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Run Safety Check
+        id: safety
+        continue-on-error: true
+        run: |
+          echo "## Safety Check Results" >> $GITHUB_STEP_SUMMARY
+          pipx run safety check --json > safety-report.json || true
+          pipx run safety check --full-report || true
+          echo "Safety check completed. Review output above for vulnerabilities." >> $GITHUB_STEP_SUMMARY
+
+      - name: Run Bandit Security Linter
+        id: bandit
+        continue-on-error: true
+        run: |
+          echo "## Bandit Security Linter Results" >> $GITHUB_STEP_SUMMARY
+          pipx run bandit -r wpgtk -f json -o bandit-report.json || true
+          pipx run bandit -r wpgtk || true
+          echo "Bandit scan completed. Check output for potential security issues in code." >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload pip-audit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
+          if-no-files-found: ignore
+
+      - name: Upload safety results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-report
+          path: safety-report.json
+          if-no-files-found: ignore
+
+      - name: Upload bandit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
+          if-no-files-found: ignore
+
+      - name: Check for vulnerabilities
+        run: |
+          echo "Vulnerability scan complete!"
+          echo "Review the step summaries above and artifact reports for detailed information."
+          echo ""
+          echo "If vulnerabilities are found:"
+          echo "1. Review the severity and impact"
+          echo "2. Update affected dependencies in pyproject.toml"
+          echo "3. Test the updated dependencies"
+          echo "4. Commit and push the updates"
+          
+          # Check for vulnerabilities and provide reporting
+          # Note: We use continue-on-error for individual scans to collect all results
+          FOUND_VULNS=false
+          FOUND_CRITICAL=false  # Tracks CRITICAL vulnerabilities across all scanners
+          
+          if [ -f pip-audit-report.json ] && [ -s pip-audit-report.json ]; then
+            # Validate JSON before parsing
+            if jq empty pip-audit-report.json 2>/dev/null; then
+              # pip-audit JSON format: {"dependencies": [{"name": "...", "version": "...", "vulns": [...]}]}
+              # Count dependencies that have vulnerabilities
+              VULN_COUNT=$(jq -r '[.dependencies[]? | select(.vulns | length > 0)] | length' pip-audit-report.json 2>/dev/null || echo "0")
+              TOTAL_VULNS=$(jq -r '[.dependencies[]? | .vulns // []] | add | length' pip-audit-report.json 2>/dev/null || echo "0")
+              
+              # Check for CRITICAL severity vulnerabilities
+              CRITICAL_VULNS=$(jq -r '[.dependencies[]? | .vulns[]? | select(.severity == "CRITICAL")] | length' pip-audit-report.json 2>/dev/null || echo "0")
+              
+              if [ "$VULN_COUNT" -gt 0 ] 2>/dev/null; then
+                VULN_WORD=$([ "$TOTAL_VULNS" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
+                PKG_WORD=$([ "$VULN_COUNT" = "1" ] && echo "package" || echo "packages")
+                echo "⚠️ pip-audit found $TOTAL_VULNS $VULN_WORD in $VULN_COUNT $PKG_WORD"
+                FOUND_VULNS=true
+                
+                if [ "$CRITICAL_VULNS" -gt 0 ] 2>/dev/null; then
+                  CRIT_WORD=$([ "$CRITICAL_VULNS" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
+                  echo "🚨 CRITICAL: pip-audit found $CRITICAL_VULNS CRITICAL $CRIT_WORD!"
+                  FOUND_CRITICAL=true
+                fi
+              fi
+            else
+              echo "⚠️ pip-audit report is not valid JSON, cannot parse results"
+            fi
+          fi
+          
+          if [ -f safety-report.json ] && [ -s safety-report.json ]; then
+            # Validate JSON before parsing
+            if jq empty safety-report.json 2>/dev/null; then
+              # Check if safety found any vulnerabilities
+              SAFETY_VULNS=$(jq -r '.vulnerabilities? // [] | length' safety-report.json 2>/dev/null || echo "0")
+              
+              # Check for CRITICAL severity in safety (if severity field exists)
+              # Check both cases as different versions may use different conventions
+              SAFETY_CRITICAL=$(jq -r '[.vulnerabilities[]? | select(.severity == "CRITICAL" or .severity == "critical")] | length' safety-report.json 2>/dev/null || echo "0")
+              
+              if [ "$SAFETY_VULNS" -gt 0 ] 2>/dev/null; then
+                VULN_WORD=$([ "$SAFETY_VULNS" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
+                echo "⚠️ safety found $SAFETY_VULNS $VULN_WORD"
+                FOUND_VULNS=true
+                
+                if [ "$SAFETY_CRITICAL" -gt 0 ] 2>/dev/null; then
+                  CRIT_WORD=$([ "$SAFETY_CRITICAL" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
+                  echo "🚨 CRITICAL: safety found $SAFETY_CRITICAL CRITICAL $CRIT_WORD!"
+                  FOUND_CRITICAL=true
+                fi
+              fi
+            else
+              echo "⚠️ safety report is not valid JSON, cannot parse results"
+            fi
+          fi
+          
+          if [ -f bandit-report.json ] && [ -s bandit-report.json ]; then
+            # Validate JSON before parsing
+            if jq empty bandit-report.json 2>/dev/null; then
+              # Check if bandit found medium or high severity issues
+              HIGH_ISSUES=$(jq -r '.results? // [] | map(select(.issue_severity == "HIGH" or .issue_severity == "MEDIUM")) | length' bandit-report.json 2>/dev/null || echo "0")
+              if [ "$HIGH_ISSUES" -gt 0 ] 2>/dev/null; then
+                ISSUE_WORD=$([ "$HIGH_ISSUES" = "1" ] && echo "issue" || echo "issues")
+                echo "ℹ️ bandit found $HIGH_ISSUES medium/high severity code $ISSUE_WORD"
+              fi
+            else
+              echo "⚠️ bandit report is not valid JSON, cannot parse results"
+            fi
+          fi
+          
+          # Report results and fail on CRITICAL vulnerabilities
+          if [ "$FOUND_CRITICAL" = true ]; then
+            echo ""
+            echo "❌ CRITICAL vulnerabilities detected! This build will FAIL."
+            echo "CRITICAL vulnerabilities must be addressed immediately."
+            echo "Update affected dependencies in pyproject.toml and rerun the scan."
+            exit 1
+          elif [ "$FOUND_VULNS" = true ]; then
+            echo ""
+            echo "⚠️ Vulnerabilities detected in dependencies (non-critical)."
+            echo "Please review the scan results and update dependencies as needed."
+            echo "Dependabot will automatically create PRs for many of these issues."
+          else
+            echo ""
+            echo "✅ No known vulnerabilities found in dependencies!"
+          fi
