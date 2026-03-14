@@ -62,6 +62,25 @@ All these tools run automatically on every push, pull request, and weekly via sc
 ## Running Scans Locally
 
 ### Prerequisites
+
+You can install security tools either globally with pip or in isolated environments with pipx (recommended).
+
+**Option 1: Using pipx (recommended for isolation)**
+```bash
+# Install pipx if you don't have it
+pip install pipx
+python -m pipx ensurepath
+
+# Install the package
+pip install .
+
+# Install security tools in isolated environments
+pipx install pip-audit
+pipx install safety
+pipx install bandit
+```
+
+**Option 2: Using pip (simpler but includes tool dependencies in scans)**
 ```bash
 # Install the package
 pip install .
@@ -74,6 +93,7 @@ pip install pip-audit safety bandit
 ```bash
 # Basic scan
 pip-audit
+# Or with pipx: pipx run pip-audit
 
 # Detailed scan with descriptions
 pip-audit --desc
@@ -89,6 +109,7 @@ pip-audit -r requirements.txt
 ```bash
 # Basic scan
 safety check
+# Or with pipx: pipx run safety check
 
 # Full report with more details
 safety check --full-report
@@ -104,6 +125,7 @@ safety scan
 ```bash
 # Scan the wpgtk directory
 bandit -r wpgtk
+# Or with pipx: pipx run bandit -r wpgtk
 
 # Generate detailed report
 bandit -r wpgtk -f json -o bandit-report.json
@@ -320,6 +342,14 @@ When contributing to this project:
 7. **Subscribe to security advisories**: Watch for CVEs in major dependencies
 
 ## Troubleshooting
+
+### Security scans report too many vulnerabilities
+**Solution**: If you installed scanning tools with `pip install` in the same environment, they may scan their own dependencies. Use `pipx` to run tools in isolated environments:
+```bash
+pipx run pip-audit
+pipx run safety check
+pipx run bandit -r wpgtk
+```
 
 ### pip-audit fails with "No module found"
 **Solution**: Make sure you've installed the package first: `pip install .`

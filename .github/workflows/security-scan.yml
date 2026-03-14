@@ -3,6 +3,9 @@
 # 1. pip-audit: Official PyPA tool for scanning Python packages against OSV database
 # 2. safety: Checks against Safety DB for known security vulnerabilities
 # 3. bandit: Security linter for Python code (optional, checks for security issues in code)
+#
+# Tools are run in isolated environments using pipx to ensure they only scan
+# the project's actual dependencies, not the scanning tools' own dependencies.
 
 name: Security - Dependency Vulnerability Scan
 
