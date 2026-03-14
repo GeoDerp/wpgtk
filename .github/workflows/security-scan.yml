@@ -122,10 +122,12 @@ jobs:
           FOUND_VULNS=false
           
           if [ -f pip-audit-report.json ]; then
-            # pip-audit JSON format: {"dependencies": [{...}], "metadata": {...}}
-            VULN_COUNT=$(jq -r '.dependencies // [] | length' pip-audit-report.json 2>/dev/null || echo "0")
+            # pip-audit JSON format: {"dependencies": [{"name": "...", "version": "...", "vulns": [...]}]}
+            # Count dependencies that have vulnerabilities
+            VULN_COUNT=$(jq -r '[.dependencies[] | select(.vulns | length > 0)] | length' pip-audit-report.json 2>/dev/null || echo "0")
+            TOTAL_VULNS=$(jq -r '[.dependencies[] | .vulns // []] | add | length' pip-audit-report.json 2>/dev/null || echo "0")
             if [ "$VULN_COUNT" != "0" ] && [ "$VULN_COUNT" != "null" ]; then
-              echo "⚠️ pip-audit found $VULN_COUNT vulnerable package(s)"
+              echo "⚠️ pip-audit found $TOTAL_VULNS vulnerability/vulnerabilities in $VULN_COUNT package(s)"
               FOUND_VULNS=true
             fi
           fi
@@ -140,7 +142,7 @@ jobs:
           fi
           
           if [ -f bandit-report.json ]; then
-            # Check if bandit found high or critical severity issues
+            # Check if bandit found medium or high severity issues
             HIGH_ISSUES=$(jq -r '.results // [] | map(select(.issue_severity == "HIGH" or .issue_severity == "MEDIUM")) | length' bandit-report.json 2>/dev/null || echo "0")
             if [ "$HIGH_ISSUES" != "0" ] && [ "$HIGH_ISSUES" != "null" ]; then
               echo "ℹ️ bandit found $HIGH_ISSUES medium/high severity code issue(s)"

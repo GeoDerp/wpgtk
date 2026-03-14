@@ -297,7 +297,7 @@ from subprocess import Popen
 ## Additional Resources
 
 - [pip-audit Documentation](https://github.com/pypa/pip-audit)
-- [safety Documentation](https://docs.pyup.io/docs/safety-20-command-line-interface)
+- [safety Documentation](https://docs.safetycli.com/)
 - [bandit Documentation](https://bandit.readthedocs.io/)
 - [CodeQL Documentation](https://codeql.github.com/docs/)
 - [Dependabot Documentation](https://docs.github.com/en/code-security/dependabot)
