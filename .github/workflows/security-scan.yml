@@ -129,6 +129,7 @@ jobs:
           # Check for vulnerabilities and provide reporting
           # Note: We use continue-on-error for individual scans to collect all results
           FOUND_VULNS=false
+          FOUND_CRITICAL=false
           
           if [ -f pip-audit-report.json ] && [ -s pip-audit-report.json ]; then
             # Validate JSON before parsing
@@ -137,11 +138,21 @@ jobs:
               # Count dependencies that have vulnerabilities
               VULN_COUNT=$(jq -r '[.dependencies[]? | select(.vulns | length > 0)] | length' pip-audit-report.json 2>/dev/null || echo "0")
               TOTAL_VULNS=$(jq -r '[.dependencies[]? | .vulns // []] | add | length' pip-audit-report.json 2>/dev/null || echo "0")
+              
+              # Check for CRITICAL severity vulnerabilities
+              CRITICAL_VULNS=$(jq -r '[.dependencies[]? | .vulns[]? | select(.severity == "CRITICAL")] | length' pip-audit-report.json 2>/dev/null || echo "0")
+              
               if [ "$VULN_COUNT" -gt 0 ] 2>/dev/null; then
                 VULN_WORD=$([ "$TOTAL_VULNS" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
                 PKG_WORD=$([ "$VULN_COUNT" = "1" ] && echo "package" || echo "packages")
                 echo "⚠️ pip-audit found $TOTAL_VULNS $VULN_WORD in $VULN_COUNT $PKG_WORD"
                 FOUND_VULNS=true
+                
+                if [ "$CRITICAL_VULNS" -gt 0 ] 2>/dev/null; then
+                  CRIT_WORD=$([ "$CRITICAL_VULNS" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
+                  echo "🚨 CRITICAL: pip-audit found $CRITICAL_VULNS CRITICAL $CRIT_WORD!"
+                  FOUND_CRITICAL=true
+                fi
               fi
             else
               echo "⚠️ pip-audit report is not valid JSON, cannot parse results"
@@ -153,10 +164,20 @@ jobs:
             if jq empty safety-report.json 2>/dev/null; then
               # Check if safety found any vulnerabilities
               SAFETY_VULNS=$(jq -r '.vulnerabilities? // [] | length' safety-report.json 2>/dev/null || echo "0")
+              
+              # Check for CRITICAL severity in safety (if severity field exists)
+              SAFETY_CRITICAL=$(jq -r '[.vulnerabilities[]? | select(.severity == "CRITICAL" or .severity == "critical")] | length' safety-report.json 2>/dev/null || echo "0")
+              
               if [ "$SAFETY_VULNS" -gt 0 ] 2>/dev/null; then
                 VULN_WORD=$([ "$SAFETY_VULNS" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
                 echo "⚠️ safety found $SAFETY_VULNS $VULN_WORD"
                 FOUND_VULNS=true
+                
+                if [ "$SAFETY_CRITICAL" -gt 0 ] 2>/dev/null; then
+                  CRIT_WORD=$([ "$SAFETY_CRITICAL" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
+                  echo "🚨 CRITICAL: safety found $SAFETY_CRITICAL CRITICAL $CRIT_WORD!"
+                  FOUND_CRITICAL=true
+                fi
               fi
             else
               echo "⚠️ safety report is not valid JSON, cannot parse results"
@@ -177,11 +198,16 @@ jobs:
             fi
           fi
           
-          # Provide guidance but don't fail the workflow
-          # This allows Dependabot to create PRs and developers to review
-          if [ "$FOUND_VULNS" = true ]; then
+          # Report results and fail on CRITICAL vulnerabilities
+          if [ "$FOUND_CRITICAL" = true ]; then
             echo ""
-            echo "❌ Vulnerabilities detected in dependencies!"
+            echo "❌ CRITICAL vulnerabilities detected! This build will FAIL."
+            echo "CRITICAL vulnerabilities must be addressed immediately."
+            echo "Update affected dependencies in pyproject.toml and rerun the scan."
+            exit 1
+          elif [ "$FOUND_VULNS" = true ]; then
+            echo ""
+            echo "⚠️ Vulnerabilities detected in dependencies (non-critical)."
             echo "Please review the scan results and update dependencies as needed."
             echo "Dependabot will automatically create PRs for many of these issues."
           else
