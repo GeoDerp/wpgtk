@@ -27,7 +27,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write  # Required for uploading SARIF results
 
 jobs:
   dependency-scan:
@@ -49,17 +48,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install .
 
-      - name: Install security scanning tools
+      - name: Install pipx for isolated tool execution
         run: |
-          pip install pip-audit safety bandit
+          python -m pip install pipx
+          python -m pipx ensurepath
+
+      - name: Install security scanning tools (isolated)
+        run: |
+          pipx install pip-audit
+          pipx install safety
+          pipx install bandit
 
       - name: Run pip-audit (PyPA Official Tool)
         id: pip-audit
         continue-on-error: true
         run: |
           echo "## pip-audit Results" >> $GITHUB_STEP_SUMMARY
-          pip-audit --desc --format json > pip-audit-report.json || true
-          pip-audit --desc || true
+          pipx run pip-audit --desc --format json > pip-audit-report.json || true
+          pipx run pip-audit --desc || true
           if [ -f pip-audit-report.json ]; then
             echo "pip-audit scan completed. Check the output above for details." >> $GITHUB_STEP_SUMMARY
           fi
@@ -69,8 +75,8 @@ jobs:
         continue-on-error: true
         run: |
           echo "## Safety Check Results" >> $GITHUB_STEP_SUMMARY
-          safety check --json > safety-report.json || true
-          safety check --full-report || true
+          pipx run safety check --json > safety-report.json || true
+          pipx run safety check --full-report || true
           echo "Safety check completed. Review output above for vulnerabilities." >> $GITHUB_STEP_SUMMARY
 
       - name: Run Bandit Security Linter
@@ -78,8 +84,8 @@ jobs:
         continue-on-error: true
         run: |
           echo "## Bandit Security Linter Results" >> $GITHUB_STEP_SUMMARY
-          bandit -r wpgtk -f json -o bandit-report.json || true
-          bandit -r wpgtk || true
+          pipx run bandit -r wpgtk -f json -o bandit-report.json || true
+          pipx run bandit -r wpgtk || true
           echo "Bandit scan completed. Check output for potential security issues in code." >> $GITHUB_STEP_SUMMARY
 
       - name: Upload pip-audit results
@@ -121,35 +127,50 @@ jobs:
           # Note: We use continue-on-error for individual scans to collect all results
           FOUND_VULNS=false
           
-          if [ -f pip-audit-report.json ]; then
-            # pip-audit JSON format: {"dependencies": [{"name": "...", "version": "...", "vulns": [...]}]}
-            # Count dependencies that have vulnerabilities
-            VULN_COUNT=$(jq -r '[.dependencies[] | select(.vulns | length > 0)] | length' pip-audit-report.json 2>/dev/null || echo "0")
-            TOTAL_VULNS=$(jq -r '[.dependencies[] | .vulns // []] | add | length' pip-audit-report.json 2>/dev/null || echo "0")
-            if [ "$VULN_COUNT" != "0" ] && [ "$VULN_COUNT" != "null" ]; then
-              VULN_WORD=$([ "$TOTAL_VULNS" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
-              PKG_WORD=$([ "$VULN_COUNT" = "1" ] && echo "package" || echo "packages")
-              echo "⚠️ pip-audit found $TOTAL_VULNS $VULN_WORD in $VULN_COUNT $PKG_WORD"
-              FOUND_VULNS=true
+          if [ -f pip-audit-report.json ] && [ -s pip-audit-report.json ]; then
+            # Validate JSON before parsing
+            if jq empty pip-audit-report.json 2>/dev/null; then
+              # pip-audit JSON format: {"dependencies": [{"name": "...", "version": "...", "vulns": [...]}]}
+              # Count dependencies that have vulnerabilities
+              VULN_COUNT=$(jq -r '[.dependencies[]? | select(.vulns | length > 0)] | length' pip-audit-report.json 2>/dev/null || echo "0")
+              TOTAL_VULNS=$(jq -r '[.dependencies[]? | .vulns // []] | add | length' pip-audit-report.json 2>/dev/null || echo "0")
+              if [ "$VULN_COUNT" != "0" ] && [ "$VULN_COUNT" != "null" ] && [ -n "$VULN_COUNT" ]; then
+                VULN_WORD=$([ "$TOTAL_VULNS" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
+                PKG_WORD=$([ "$VULN_COUNT" = "1" ] && echo "package" || echo "packages")
+                echo "⚠️ pip-audit found $TOTAL_VULNS $VULN_WORD in $VULN_COUNT $PKG_WORD"
+                FOUND_VULNS=true
+              fi
+            else
+              echo "⚠️ pip-audit report is not valid JSON, cannot parse results"
             fi
           fi
           
-          if [ -f safety-report.json ]; then
-            # Check if safety found any vulnerabilities
-            SAFETY_VULNS=$(jq -r '.vulnerabilities // [] | length' safety-report.json 2>/dev/null || echo "0")
-            if [ "$SAFETY_VULNS" != "0" ] && [ "$SAFETY_VULNS" != "null" ]; then
-              VULN_WORD=$([ "$SAFETY_VULNS" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
-              echo "⚠️ safety found $SAFETY_VULNS $VULN_WORD"
-              FOUND_VULNS=true
+          if [ -f safety-report.json ] && [ -s safety-report.json ]; then
+            # Validate JSON before parsing
+            if jq empty safety-report.json 2>/dev/null; then
+              # Check if safety found any vulnerabilities
+              SAFETY_VULNS=$(jq -r '.vulnerabilities? // [] | length' safety-report.json 2>/dev/null || echo "0")
+              if [ "$SAFETY_VULNS" != "0" ] && [ "$SAFETY_VULNS" != "null" ] && [ -n "$SAFETY_VULNS" ]; then
+                VULN_WORD=$([ "$SAFETY_VULNS" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
+                echo "⚠️ safety found $SAFETY_VULNS $VULN_WORD"
+                FOUND_VULNS=true
+              fi
+            else
+              echo "⚠️ safety report is not valid JSON, cannot parse results"
             fi
           fi
           
-          if [ -f bandit-report.json ]; then
-            # Check if bandit found medium or high severity issues
-            HIGH_ISSUES=$(jq -r '.results // [] | map(select(.issue_severity == "HIGH" or .issue_severity == "MEDIUM")) | length' bandit-report.json 2>/dev/null || echo "0")
-            if [ "$HIGH_ISSUES" != "0" ] && [ "$HIGH_ISSUES" != "null" ]; then
-              ISSUE_WORD=$([ "$HIGH_ISSUES" = "1" ] && echo "issue" || echo "issues")
-              echo "ℹ️ bandit found $HIGH_ISSUES medium/high severity code $ISSUE_WORD"
+          if [ -f bandit-report.json ] && [ -s bandit-report.json ]; then
+            # Validate JSON before parsing
+            if jq empty bandit-report.json 2>/dev/null; then
+              # Check if bandit found medium or high severity issues
+              HIGH_ISSUES=$(jq -r '.results? // [] | map(select(.issue_severity == "HIGH" or .issue_severity == "MEDIUM")) | length' bandit-report.json 2>/dev/null || echo "0")
+              if [ "$HIGH_ISSUES" != "0" ] && [ "$HIGH_ISSUES" != "null" ] && [ -n "$HIGH_ISSUES" ]; then
+                ISSUE_WORD=$([ "$HIGH_ISSUES" = "1" ] && echo "issue" || echo "issues")
+                echo "ℹ️ bandit found $HIGH_ISSUES medium/high severity code $ISSUE_WORD"
+              fi
+            else
+              echo "⚠️ bandit report is not valid JSON, cannot parse results"
             fi
           fi
           
