@@ -127,7 +127,9 @@ jobs:
             VULN_COUNT=$(jq -r '[.dependencies[] | select(.vulns | length > 0)] | length' pip-audit-report.json 2>/dev/null || echo "0")
             TOTAL_VULNS=$(jq -r '[.dependencies[] | .vulns // []] | add | length' pip-audit-report.json 2>/dev/null || echo "0")
             if [ "$VULN_COUNT" != "0" ] && [ "$VULN_COUNT" != "null" ]; then
-              echo "⚠️ pip-audit found $TOTAL_VULNS vulnerability/vulnerabilities in $VULN_COUNT package(s)"
+              VULN_WORD=$([ "$TOTAL_VULNS" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
+              PKG_WORD=$([ "$VULN_COUNT" = "1" ] && echo "package" || echo "packages")
+              echo "⚠️ pip-audit found $TOTAL_VULNS $VULN_WORD in $VULN_COUNT $PKG_WORD"
               FOUND_VULNS=true
             fi
           fi
@@ -136,7 +138,8 @@ jobs:
             # Check if safety found any vulnerabilities
             SAFETY_VULNS=$(jq -r '.vulnerabilities // [] | length' safety-report.json 2>/dev/null || echo "0")
             if [ "$SAFETY_VULNS" != "0" ] && [ "$SAFETY_VULNS" != "null" ]; then
-              echo "⚠️ safety found $SAFETY_VULNS vulnerability/vulnerabilities"
+              VULN_WORD=$([ "$SAFETY_VULNS" = "1" ] && echo "vulnerability" || echo "vulnerabilities")
+              echo "⚠️ safety found $SAFETY_VULNS $VULN_WORD"
               FOUND_VULNS=true
             fi
           fi
@@ -145,7 +148,8 @@ jobs:
             # Check if bandit found medium or high severity issues
             HIGH_ISSUES=$(jq -r '.results // [] | map(select(.issue_severity == "HIGH" or .issue_severity == "MEDIUM")) | length' bandit-report.json 2>/dev/null || echo "0")
             if [ "$HIGH_ISSUES" != "0" ] && [ "$HIGH_ISSUES" != "null" ]; then
-              echo "ℹ️ bandit found $HIGH_ISSUES medium/high severity code issue(s)"
+              ISSUE_WORD=$([ "$HIGH_ISSUES" = "1" ] && echo "issue" || echo "issues")
+              echo "ℹ️ bandit found $HIGH_ISSUES medium/high severity code $ISSUE_WORD"
             fi
           fi
           
