@@ -117,12 +117,44 @@ jobs:
           echo "3. Test the updated dependencies"
           echo "4. Commit and push the updates"
           
-          # Fail the workflow if critical vulnerabilities are found
+          # Check for vulnerabilities and provide reporting
           # Note: We use continue-on-error for individual scans to collect all results
-          # but we want to indicate if any serious issues were found
+          FOUND_VULNS=false
+          
           if [ -f pip-audit-report.json ]; then
-            VULN_COUNT=$(jq '.dependencies | length' pip-audit-report.json 2>/dev/null || echo "0")
-            if [ "$VULN_COUNT" != "0" ]; then
-              echo "⚠️ pip-audit found $VULN_COUNT vulnerable dependencies"
+            # pip-audit JSON format: {"dependencies": [{...}], "metadata": {...}}
+            VULN_COUNT=$(jq -r '.dependencies // [] | length' pip-audit-report.json 2>/dev/null || echo "0")
+            if [ "$VULN_COUNT" != "0" ] && [ "$VULN_COUNT" != "null" ]; then
+              echo "⚠️ pip-audit found $VULN_COUNT vulnerable package(s)"
+              FOUND_VULNS=true
             fi
+          fi
+          
+          if [ -f safety-report.json ]; then
+            # Check if safety found any vulnerabilities
+            SAFETY_VULNS=$(jq -r '.vulnerabilities // [] | length' safety-report.json 2>/dev/null || echo "0")
+            if [ "$SAFETY_VULNS" != "0" ] && [ "$SAFETY_VULNS" != "null" ]; then
+              echo "⚠️ safety found $SAFETY_VULNS vulnerability/vulnerabilities"
+              FOUND_VULNS=true
+            fi
+          fi
+          
+          if [ -f bandit-report.json ]; then
+            # Check if bandit found high or critical severity issues
+            HIGH_ISSUES=$(jq -r '.results // [] | map(select(.issue_severity == "HIGH" or .issue_severity == "MEDIUM")) | length' bandit-report.json 2>/dev/null || echo "0")
+            if [ "$HIGH_ISSUES" != "0" ] && [ "$HIGH_ISSUES" != "null" ]; then
+              echo "ℹ️ bandit found $HIGH_ISSUES medium/high severity code issue(s)"
+            fi
+          fi
+          
+          # Provide guidance but don't fail the workflow
+          # This allows Dependabot to create PRs and developers to review
+          if [ "$FOUND_VULNS" = true ]; then
+            echo ""
+            echo "❌ Vulnerabilities detected in dependencies!"
+            echo "Please review the scan results and update dependencies as needed."
+            echo "Dependabot will automatically create PRs for many of these issues."
+          else
+            echo ""
+            echo "✅ No known vulnerabilities found in dependencies!"
           fi

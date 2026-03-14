@@ -3,8 +3,8 @@
 
 ![PyPI](https://img.shields.io/pypi/v/wpgtk.svg?style=flat-square)
 ![license](https://img.shields.io/badge/license-GPLv2-green.svg?style=flat-square)
-![Security Scan](https://github.com/GeoDerp/wpgtk/actions/workflows/security-scan.yml/badge.svg)
-![CodeQL](https://github.com/GeoDerp/wpgtk/actions/workflows/codeql-analysis.yml/badge.svg)
+![Security Scan Status](https://github.com/GeoDerp/wpgtk/actions/workflows/security-scan.yml/badge.svg)
+![CodeQL Analysis Status](https://github.com/GeoDerp/wpgtk/actions/workflows/codeql-analysis.yml/badge.svg)
 <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=X996W7Z8PW4VW"><img src="https://img.shields.io/badge/donate-paypal-green.svg?style=flat-square"></a>
 <a href="https://www.irccloud.com/invite?channel=%23wpgtk&amp;hostname=irc.freenode.net&amp;port=6697&amp;ssl=1" target="_blank"><img src="https://img.shields.io/badge/IRC-%23wpgtk-1e72ff.svg?style=flat-square"  height="20"></a>
 <a href="https://discord.gg/A9yTWv9rvn" target="_blank"><img src="https://img.shields.io/discord/846433943090757652?color=green&label=%23wpgtk&logo=discord&logoColor=white&style=flat-square"  height="20"></a>
