@@ -5,3 +5,11 @@
 venv/
 requirements.txt
 tags
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Python cache
+__pycache__/
