@@ -2,7 +2,9 @@
 
 ## Dependency Vulnerability Management
 
-This project uses multiple automated tools to ensure dependencies are secure and up-to-date:
+This project uses multiple automated tools to ensure dependencies are secure and up-to-date.
+
+> **📚 For detailed instructions on using these tools, see the [Security Scanning Guide](docs/SECURITY_SCANNING_GUIDE.md)**
 
 ### Automated Security Tools
 
