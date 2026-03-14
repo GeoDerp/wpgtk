@@ -129,7 +129,7 @@ jobs:
           # Check for vulnerabilities and provide reporting
           # Note: We use continue-on-error for individual scans to collect all results
           FOUND_VULNS=false
-          FOUND_CRITICAL=false
+          FOUND_CRITICAL=false  # Tracks CRITICAL vulnerabilities across all scanners
           
           if [ -f pip-audit-report.json ] && [ -s pip-audit-report.json ]; then
             # Validate JSON before parsing
@@ -166,6 +166,7 @@ jobs:
               SAFETY_VULNS=$(jq -r '.vulnerabilities? // [] | length' safety-report.json 2>/dev/null || echo "0")
               
               # Check for CRITICAL severity in safety (if severity field exists)
+              # Check both cases as different versions may use different conventions
               SAFETY_CRITICAL=$(jq -r '[.vulnerabilities[]? | select(.severity == "CRITICAL" or .severity == "critical")] | length' safety-report.json 2>/dev/null || echo "0")
               
               if [ "$SAFETY_VULNS" -gt 0 ] 2>/dev/null; then
