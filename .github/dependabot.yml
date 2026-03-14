@@ -1,0 +1,48 @@
+# Dependabot configuration for automated dependency updates and security alerts
+# This helps keep dependencies up-to-date and secure by automatically checking for:
+# - Security vulnerabilities in dependencies
+# - New versions of dependencies
+# - Creating pull requests for updates
+
+version: 2
+updates:
+  # Enable version updates for pip (Python dependencies)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    # Automatically create pull requests for security updates
+    open-pull-requests-limit: 10
+    # Group all patch updates together
+    groups:
+      patch-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+    # Commit message prefix
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    # Reviewers to assign to PRs
+    labels:
+      - "dependencies"
+      - "security"
+    # Allow both direct and indirect dependency updates
+    versioning-strategy: increase
+
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
